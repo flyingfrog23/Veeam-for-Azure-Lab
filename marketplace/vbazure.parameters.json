@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "managedApplicationName": {
+      "value": "veeam-vbma-lab"
+    },
+    "managedResourceGroupName": {
+      "value": "veeam-vbma-mrg"
+    },
+    "location": {
+      "value": "westeurope"
+    },
+
+    /*
+      Marketplace identification.
+      IMPORTANT: These values vary by offer/version and sometimes by publisher naming.
+      If deployment fails with "plan not found", update these three fields.
+
+      You can discover correct values with:
+        az vm image list --all --publisher <publisher> --output table
+      (and/or by checking the Marketplace offer details)
+    */
+    "publisher": { "value": "veeam" },
+    "offer": { "value": "veeam_backup_for_microsoft_azure" },
+    "plan": { "value": "free" },
+
+    /*
+      appParameters: Passed through to the managed application.
+      The exact keys depend on the specific Marketplace solution.
+      Start with an empty object, then add parameters once you confirm the required schema.
+    */
+    "appParameters": {
+      "value": {}
+    }
+  }
+}
