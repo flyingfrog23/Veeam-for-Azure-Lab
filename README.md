@@ -4,7 +4,7 @@
 
 export SUBSCRIPTION_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
-export ADMIN_PASSWORD="StrongPassword!123"
+export ADMIN_PASSWORD="StrongPassword123"
 
 export ADMIN_USERNAME="veeamadmin"
 
