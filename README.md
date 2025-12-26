@@ -2,11 +2,7 @@
 
 ./scripts/destroy.sh  # deletes managedapp + managed rg + rg-veeam-lab
 
-export SUBSCRIPTION_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-
-export ADMIN_PASSWORD="StrongPassword123"
-
-export ADMIN_USERNAME="veeamadmin"
+export SUBSCRIPTION_ID="..."
 
 export LOCATION="westeurope"
 
@@ -14,6 +10,10 @@ export RG_NAME="veeam-lab-rg"
 
 export PREFIX="veeam-lab"
 
-export ALLOWED_RDP_SOURCE="$(curl -s ifconfig.me)/32"
+export ADMIN_USERNAME="veeamadmin"
 
-export DEPLOY_VBMA=false
+export ADMIN_PASSWORD="StrongPassword123"
+
+export ALLOWED_RDP_SOURCE="0.0.0.0/0"
+
+export DEPLOY_VBMA="true"
