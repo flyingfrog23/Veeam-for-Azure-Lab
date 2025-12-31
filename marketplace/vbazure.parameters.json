@@ -1,24 +1,7 @@
 {
-  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-  "contentVersion": "1.0.0.0",
-  "parameters": {
-    "managedApplicationName": {
-      "value": "veeam-vbma-lab"
-    },
-    "managedResourceGroupName": {
-      "value": "veeam-vbma-mrg"
-    },
-    "location": {
-      "value": "westeurope"
-    },
-    
-    "publisher": { "value": "veeam" },
-    "offer": { "value": "azure_backup_free" },
-    "plan": { "value": "veeambackupazure_free_v6_0" },
-    "planVersion": { "value": "6.0.234" },
-
-    "appParameters": {
-      "value": {}
-    }
-  }
+  "publisher": "veeam",
+  "offer": "azure_backup_free",
+  "plan": "veeambackupazure_free_v6_0",
+  "planVersion": "6.0.234",
+  "appParameters": {}
 }
