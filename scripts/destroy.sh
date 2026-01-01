@@ -1,39 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[[ -f "$ROOT/.env" ]] && set -a && source "$ROOT/.env" && set +a
 
-# Destroys the lab by deleting the resource groups.
-#
-# Required:
-#   SUBSCRIPTION_ID
-#
-# Optional:
-#   RG_NAME (default: veeam-lab-rg)
-#   VBMA_MRG_NAME (default: veeam-vbma-mrg)
-#
-ENV_FILE="${REPO_ROOT}/.env"
-if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-fi
-
-SUBSCRIPTION_ID="${SUBSCRIPTION_ID:?SUBSCRIPTION_ID is required}"
+: "${SUBSCRIPTION_ID:?SUBSCRIPTION_ID is required}"
 RG_NAME="${RG_NAME:-veeam-lab-rg}"
 VBMA_MRG_NAME="${VBMA_MRG_NAME:-veeam-vbma-mrg}"
 
-az account set --subscription "${SUBSCRIPTION_ID}"
+az account set --subscription "$SUBSCRIPTION_ID"
 
-echo "==> Deleting resource group: ${RG_NAME}"
-az group delete -n "${RG_NAME}" --yes --no-wait
+echo "==> Deleting resource group: $RG_NAME"
+az group delete -n "$RG_NAME" --yes --no-wait
 
-# Best-effort cleanup of the Marketplace managed RG
-if [[ -n "${VBMA_MRG_NAME}" ]]; then
-  echo "==> Deleting managed resource group (best-effort): ${VBMA_MRG_NAME}"
-  az group delete -n "${VBMA_MRG_NAME}" --yes --no-wait || true
+# best-effort delete of marketplace managed RG (don’t fail script)
+if [[ -n "$VBMA_MRG_NAME" ]]; then
+  echo "==> Deleting managed resource group (best-effort): $VBMA_MRG_NAME"
+  az group delete -n "$VBMA_MRG_NAME" --yes --no-wait || true
 fi
 
 echo "==> Delete initiated."
