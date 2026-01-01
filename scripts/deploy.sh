@@ -69,12 +69,41 @@ PLAN="$(jq -r '.plan' "${VBMA_MARKETPLACE_FILE}")"
 PLAN_VERSION="$(jq -r '.planVersion' "${VBMA_MARKETPLACE_FILE}")"
 APP_PARAMS_JSON="$(jq -c '.appParameters // {}' "${VBMA_MARKETPLACE_FILE}")"
 
+# ---- Make managed RG name unique to avoid "poisoned" names ----
+TS="$(date +%Y%m%d%H%M%S)"
+BASE_MRG_NAME="${VBMA_MRG_NAME}"
+VBMA_MRG_NAME="${BASE_MRG_NAME}-${TS}"
+
+# Resource group name max length is 90 chars. Trim if needed.
+if (( ${#VBMA_MRG_NAME} > 90 )); then
+  # Keep the timestamp, trim the base portion.
+  # 1 for the hyphen between base and timestamp.
+  KEEP=$((90 - 1 - ${#TS}))
+  VBMA_MRG_NAME="${BASE_MRG_NAME:0:${KEEP}}-${TS}"
+fi
+
+# In case the generated name already exists (unlikely), keep trying a few times.
+for i in {1..5}; do
+  if [[ "$(az group exists -n "${VBMA_MRG_NAME}")" != "true" ]]; then
+    break
+  fi
+  TS="$(date +%Y%m%d%H%M%S)"
+  VBMA_MRG_NAME="${BASE_MRG_NAME}-${TS}"
+  if (( ${#VBMA_MRG_NAME} > 90 )); then
+    KEEP=$((90 - 1 - ${#TS}))
+    VBMA_MRG_NAME="${BASE_MRG_NAME:0:${KEEP}}-${TS}"
+  fi
+  sleep 1
+done
+
 if [[ "$(az group exists -n "${VBMA_MRG_NAME}")" == "true" ]]; then
-  echo "ERROR: Managed resource group '${VBMA_MRG_NAME}' already exists." >&2
+  echo "ERROR: Managed resource group '${VBMA_MRG_NAME}' already exists after retries." >&2
   exit 1
 fi
 
 MRG_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${VBMA_MRG_NAME}"
+echo "==> Using managed resource group: ${VBMA_MRG_NAME}"
+echo "==> Managed RG ID: ${MRG_ID}"
 
 echo "==> Accepting Marketplace terms (best-effort)"
 az term accept --publisher "${PUBLISHER}" --product "${OFFER}" --plan "${PLAN}" 1>/dev/null 2>/dev/null || \
