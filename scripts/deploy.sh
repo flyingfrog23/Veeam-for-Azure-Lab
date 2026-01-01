@@ -15,21 +15,27 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-# ---- Baseline lab ----
-SUBSCRIPTION_ID="${SUBSCRIPTION_ID:?SUBSCRIPTION_ID is required}"
-LOCATION="${LOCATION:-westeurope}"
-RG_NAME="${RG_NAME:-veeam-lab-rg}"
-PREFIX="${PREFIX:-veeam-lab}"
+# ---- Helper: strip Windows CR (carriage return) that breaks Azure resource IDs ----
+strip_cr() {
+  # usage: strip_cr "value"
+  printf '%s' "${1//$'\r'/}"
+}
 
-ADMIN_USERNAME="${ADMIN_USERNAME:-veeamadmin}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
-ALLOWED_RDP_SOURCE="${ALLOWED_RDP_SOURCE:-0.0.0.0/0}"
+# ---- Baseline lab ----
+SUBSCRIPTION_ID="$(strip_cr "${SUBSCRIPTION_ID:?SUBSCRIPTION_ID is required}")"
+LOCATION="$(strip_cr "${LOCATION:-westeurope}")"
+RG_NAME="$(strip_cr "${RG_NAME:-veeam-lab-rg}")"
+PREFIX="$(strip_cr "${PREFIX:-veeam-lab}")"
+
+ADMIN_USERNAME="$(strip_cr "${ADMIN_USERNAME:-veeamadmin}")"
+ADMIN_PASSWORD="$(strip_cr "${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}")"
+ALLOWED_RDP_SOURCE="$(strip_cr "${ALLOWED_RDP_SOURCE:-0.0.0.0/0}")"
 
 # ---- Marketplace (optional) ----
-DEPLOY_VBMA="${DEPLOY_VBMA:-false}"
-VBMA_APP_NAME="${VBMA_APP_NAME:-veeam-vbma-lab}"
-VBMA_MRG_NAME="${VBMA_MRG_NAME:-veeam-vbma-mrg}"
-VBMA_MARKETPLACE_FILE="${VBMA_MARKETPLACE_FILE:-${REPO_ROOT}/marketplace/vbazure.marketplace.json}"
+DEPLOY_VBMA="$(strip_cr "${DEPLOY_VBMA:-false}")"
+VBMA_APP_NAME="$(strip_cr "${VBMA_APP_NAME:-veeam-vbma-lab}")"
+VBMA_MRG_NAME_BASE="$(strip_cr "${VBMA_MRG_NAME:-veeam-vbma-mrg}")"
+VBMA_MARKETPLACE_FILE="$(strip_cr "${VBMA_MARKETPLACE_FILE:-${REPO_ROOT}/marketplace/vbazure.marketplace.json}")"
 
 # Resolve relative marketplace path against repo root
 if [[ "${VBMA_MARKETPLACE_FILE}" != /* ]]; then
@@ -37,6 +43,15 @@ if [[ "${VBMA_MARKETPLACE_FILE}" != /* ]]; then
 fi
 
 az account set --subscription "${SUBSCRIPTION_ID}"
+
+# Use the subscription id Azure CLI is actually set to (avoids mismatch issues)
+AZ_SUBSCRIPTION_ID="$(az account show --query id -o tsv | tr -d '\r')"
+if [[ -z "${AZ_SUBSCRIPTION_ID}" ]]; then
+  echo "ERROR: Could not determine current Azure subscription id (az account show failed)." >&2
+  exit 1
+fi
+# Prefer the active CLI subscription id as source of truth
+SUBSCRIPTION_ID="${AZ_SUBSCRIPTION_ID}"
 
 echo "==> Creating resource group: ${RG_NAME} (${LOCATION})"
 az group create -n "${RG_NAME}" -l "${LOCATION}" 1>/dev/null
@@ -63,45 +78,28 @@ fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required when DEPLOY_VBMA=true" >&2; exit 1; }
 [[ -f "${VBMA_MARKETPLACE_FILE}" ]] || { echo "ERROR: Missing ${VBMA_MARKETPLACE_FILE}" >&2; exit 1; }
 
-PUBLISHER="$(jq -r '.publisher' "${VBMA_MARKETPLACE_FILE}")"
-OFFER="$(jq -r '.offer' "${VBMA_MARKETPLACE_FILE}")"
-PLAN="$(jq -r '.plan' "${VBMA_MARKETPLACE_FILE}")"
-PLAN_VERSION="$(jq -r '.planVersion' "${VBMA_MARKETPLACE_FILE}")"
-APP_PARAMS_JSON="$(jq -c '.appParameters // {}' "${VBMA_MARKETPLACE_FILE}")"
+PUBLISHER="$(jq -r '.publisher' "${VBMA_MARKETPLACE_FILE}" | tr -d '\r')"
+OFFER="$(jq -r '.offer' "${VBMA_MARKETPLACE_FILE}" | tr -d '\r')"
+PLAN="$(jq -r '.plan' "${VBMA_MARKETETPLACE_FILE:-$VBMA_MARKETPLACE_FILE}" 2>/dev/null || true)"
+# ^ guard in case of weird env override; now read correctly:
+PLAN="$(jq -r '.plan' "${VBMA_MARKETPLACE_FILE}" | tr -d '\r')"
+PLAN_VERSION="$(jq -r '.planVersion' "${VBMA_MARKETPLACE_FILE}" | tr -d '\r')"
+APP_PARAMS_JSON="$(jq -c '.appParameters // {}' "${VBMA_MARKETPLACE_FILE}" | tr -d '\r')"
 
-# ---- Make managed RG name unique to avoid "poisoned" names ----
+# Add datetime suffix to avoid "poisoned" / reused names
 TS="$(date +%Y%m%d%H%M%S)"
-BASE_MRG_NAME="${VBMA_MRG_NAME}"
-VBMA_MRG_NAME="${BASE_MRG_NAME}-${TS}"
+VBMA_MRG_NAME="${VBMA_MRG_NAME_BASE}-${TS}"
 
-# Resource group name max length is 90 chars. Trim if needed.
-if (( ${#VBMA_MRG_NAME} > 90 )); then
-  # Keep the timestamp, trim the base portion.
-  # 1 for the hyphen between base and timestamp.
-  KEEP=$((90 - 1 - ${#TS}))
-  VBMA_MRG_NAME="${BASE_MRG_NAME:0:${KEEP}}-${TS}"
-fi
-
-# In case the generated name already exists (unlikely), keep trying a few times.
-for i in {1..5}; do
-  if [[ "$(az group exists -n "${VBMA_MRG_NAME}")" != "true" ]]; then
-    break
-  fi
-  TS="$(date +%Y%m%d%H%M%S)"
-  VBMA_MRG_NAME="${BASE_MRG_NAME}-${TS}"
-  if (( ${#VBMA_MRG_NAME} > 90 )); then
-    KEEP=$((90 - 1 - ${#TS}))
-    VBMA_MRG_NAME="${BASE_MRG_NAME:0:${KEEP}}-${TS}"
-  fi
-  sleep 1
-done
+# Safety: ensure we didn't accidentally create a name with spaces/newlines
+VBMA_MRG_NAME="$(strip_cr "${VBMA_MRG_NAME}")"
 
 if [[ "$(az group exists -n "${VBMA_MRG_NAME}")" == "true" ]]; then
-  echo "ERROR: Managed resource group '${VBMA_MRG_NAME}' already exists after retries." >&2
+  echo "ERROR: Managed resource group '${VBMA_MRG_NAME}' already exists." >&2
   exit 1
 fi
 
 MRG_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${VBMA_MRG_NAME}"
+
 echo "==> Using managed resource group: ${VBMA_MRG_NAME}"
 echo "==> Managed RG ID: ${MRG_ID}"
 
