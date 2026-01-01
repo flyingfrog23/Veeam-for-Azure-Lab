@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 # -----------------------------
 # Paths
@@ -18,7 +19,7 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 # -----------------------------
-# Required / defaults
+# Required inputs
 # -----------------------------
 : "${SUBSCRIPTION_ID:?SUBSCRIPTION_ID is required}"
 : "${RG_NAME:?RG_NAME is required}"
@@ -26,6 +27,7 @@ fi
 
 LOCATION="${LOCATION:-westeurope}"
 VBMA_APP_NAME="${VBMA_APP_NAME:-veeam-vbma-lab}"
+VBMA_MRG_NAME_BASE="${VBMA_MRG_NAME:-veeam-vbma-mrg}"
 
 # Resolve marketplace file path
 if [[ "${VBMA_MARKETPLACE_FILE}" != /* ]]; then
@@ -39,7 +41,7 @@ az account set --subscription "${SUBSCRIPTION_ID}"
 SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 
 # -----------------------------
-# Read marketplace metadata
+# Marketplace metadata
 # -----------------------------
 command -v jq >/dev/null 2>&1 || {
   echo "ERROR: jq is required" >&2
@@ -47,7 +49,7 @@ command -v jq >/dev/null 2>&1 || {
 }
 
 [[ -f "${VBMA_MARKETPLACE_FILE}" ]] || {
-  echo "ERROR: Missing ${VBMA_MARKETPLACE_FILE}" >&2
+  echo "ERROR: Marketplace file not found: ${VBMA_MARKETPLACE_FILE}" >&2
   exit 1
 }
 
@@ -58,9 +60,18 @@ PLAN_VERSION="$(jq -r '.planVersion' "${VBMA_MARKETPLACE_FILE}")"
 APP_PARAMS_JSON="$(jq -c '.appParameters // {}' "${VBMA_MARKETPLACE_FILE}")"
 
 # -----------------------------
-# Accept Marketplace terms
+# Managed Resource Group (Azure-owned)
 # -----------------------------
-echo "==> Accepting Marketplace terms (best-effort)"
+TS="$(date +%Y%m%d%H%M%S)"
+VBMA_MRG_NAME="${VBMA_MRG_NAME_BASE}-${TS}"
+MRG_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${VBMA_MRG_NAME}"
+
+echo "==> Managed resource group ID:"
+echo "${MRG_ID}" | cat -v
+
+# -----------------------------
+# Accept Marketplace terms (best effort)
+# -----------------------------
 az term accept \
   --publisher "${PUBLISHER}" \
   --product "${OFFER}" \
@@ -68,7 +79,7 @@ az term accept \
   1>/dev/null 2>/dev/null || true
 
 # -----------------------------
-# App parameters (optional)
+# Optional app parameters
 # -----------------------------
 APP_PARAMS_FILE=""
 trap 'rm -f "${APP_PARAMS_FILE}" 2>/dev/null || true' EXIT
@@ -79,10 +90,9 @@ if [[ "${APP_PARAMS_JSON}" != "{}" ]]; then
 fi
 
 # -----------------------------
-# Deploy managed app
+# Deploy Managed Application
 # -----------------------------
 echo "==> Deploying VBMA managed app: ${VBMA_APP_NAME}"
-echo "==> Azure will auto-generate the managed resource group name"
 
 if [[ -n "${APP_PARAMS_FILE}" ]]; then
   az managedapp create \
@@ -90,6 +100,7 @@ if [[ -n "${APP_PARAMS_FILE}" ]]; then
     --name "${VBMA_APP_NAME}" \
     --location "${LOCATION}" \
     --kind MarketPlace \
+    --managed-rg-id "${MRG_ID}" \
     --plan-name "${PLAN}" \
     --plan-product "${OFFER}" \
     --plan-publisher "${PUBLISHER}" \
@@ -101,6 +112,7 @@ else
     --name "${VBMA_APP_NAME}" \
     --location "${LOCATION}" \
     --kind MarketPlace \
+    --managed-rg-id "${MRG_ID}" \
     --plan-name "${PLAN}" \
     --plan-product "${OFFER}" \
     --plan-publisher "${PUBLISHER}" \
@@ -108,5 +120,3 @@ else
 fi
 
 echo "==> VBMA deployment submitted."
-echo "==> Check the managed app to see the auto-generated managed resource group:"
-echo "    az managedapp show -g ${RG_NAME} -n ${VBMA_APP_NAME} --query managedResourceGroupId -o tsv"
