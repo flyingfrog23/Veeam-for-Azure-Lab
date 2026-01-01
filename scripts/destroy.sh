@@ -13,6 +13,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 #   RG_NAME (default: veeam-lab-rg)
 #   VBMA_MRG_NAME (default: veeam-vbma-mrg)
 #
+ENV_FILE="${REPO_ROOT}/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
 
 SUBSCRIPTION_ID="${SUBSCRIPTION_ID:?SUBSCRIPTION_ID is required}"
 RG_NAME="${RG_NAME:-veeam-lab-rg}"
